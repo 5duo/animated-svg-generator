@@ -501,7 +501,10 @@
                         <label for="celebaMaxCount">最大处理数量:</label>
                         <input type="number" id="celebaMaxCount" value="20000" min="1" max="10000">
                     </div>
-                    <button id="generateFromCelebA">🔄 从CelebA生成训练数据</button>
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <button id="generateFromCelebA" style="padding: 8px 12px; font-size: 14px; flex: 1;">🔄 生成数据</button>
+                        <button id="stopDataGeneration" style="padding: 8px 12px; font-size: 14px; flex: 1; background-color: #e74c3c;">🛑 终止</button>
+                    </div>
                     <div id="celebaStatus" class="status" style="margin-top: 10px;"></div>
                     <!-- 数据生成进度 -->
                     <div id="dataGenerationProgressContainer" style="display: none; margin-top: 15px;">
@@ -1281,6 +1284,53 @@
                 });
         }
 
+        // 添加终止数据生成按钮的事件处理程序
+        document.getElementById('stopDataGeneration').addEventListener('click', function() {
+            const statusDiv = document.getElementById('celebaStatus');
+            const progressContainer = document.getElementById('dataGenerationProgressContainer');
+
+            statusDiv.className = 'status info';
+            statusDiv.textContent = '正在请求停止数据生成...';
+
+            // 使用完整的URL以支持代理环境
+            const apiUrl = window.location.origin + '/data_generation/stop';
+            fetch(apiUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({})
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.error) {
+                    statusDiv.className = 'status error';
+                    statusDiv.textContent = '停止数据生成时出现错误: ' + data.error;
+                } else {
+                    statusDiv.className = 'status success';
+                    statusDiv.textContent = data.message;
+
+                    // 隐藏进度条
+                    if (progressContainer) {
+                        progressContainer.style.display = 'none';
+                    }
+
+                    // 更新数据统计
+                    updateDataStatus();
+                }
+            })
+            .catch(error => {
+                console.error('停止数据生成时出现错误:', error);
+                statusDiv.className = 'status error';
+                statusDiv.textContent = '停止数据生成时出现错误: ' + error.message;
+            });
+        });
+
         // 刷新检查点列表
         document.getElementById('refreshCheckpoints').addEventListener('click', function() {
             const checkpointList = document.getElementById('checkpointList');
@@ -1434,6 +1484,57 @@
             }
         });
 
+        // 检查数据生成状态并相应地启用/禁用按钮
+        function checkDataGenerationStatus() {
+            fetch('/data_generation/status')
+                .then(response => response.json())
+                .then(data => {
+                    const generateBtn = document.getElementById('generateFromCelebA');
+                    if (generateBtn) {
+                        if (data.running) {
+                            // 任务正在运行，禁用按钮
+                            generateBtn.disabled = true;
+                            generateBtn.title = '数据生成任务正在进行中...';
+
+                            // 如果状态区域没有显示正在进行的任务，更新显示
+                            const statusDiv = document.getElementById('celebaStatus');
+                            if (statusDiv && statusDiv.textContent !== data.message && !statusDiv.textContent.includes('正在进行')) {
+                                statusDiv.className = 'status info';
+                                statusDiv.textContent = data.message;
+                            }
+
+                            // 显示进度条
+                            const progressContainer = document.getElementById('dataGenerationProgressContainer');
+                            if (progressContainer) {
+                                progressContainer.style.display = 'block';
+                            }
+
+                            // 更新进度
+                            const progress = document.getElementById('dataGenerationProgress');
+                            const progressText = document.getElementById('dataGenerationProgressText');
+                            if (progress) {
+                                progress.value = data.progress;
+                            }
+                            if (progressText) {
+                                progressText.textContent = `进度: ${data.progress}% - ${data.message}`;
+                            }
+
+                            // 继续监控
+                            setTimeout(checkDataGenerationStatus, 1000);
+                        } else {
+                            // 任务未在运行，启用按钮
+                            generateBtn.disabled = false;
+                            generateBtn.title = '';
+                        }
+                    }
+                })
+                .catch(error => {
+                    console.error('检查数据生成状态时发生错误:', error);
+                    // 发生错误时重新尝试
+                    setTimeout(checkDataGenerationStatus, 5000);
+                });
+        }
+
         // 页面加载完成后初始化
         window.onload = function() {
             // 初始化模型路径
@@ -1444,6 +1545,7 @@
             updateDataStatus();
             updateCelebaImageCount(); // 添加更新CelebA图片数量
             checkTrainingStatus(); // 添加检查当前训练状态
+            checkDataGenerationStatus(); // 添加检查当前数据生成状态
 
             // 设置配置更改监听器
             setupConfigChangeListeners();
@@ -1453,6 +1555,7 @@
             setInterval(updateDataStatus, 10000);
             setInterval(updateCelebaImageCount, 30000); // 每30秒更新一次CelebA图片数量
             setInterval(checkTrainingStatus, 5000); // 定期检查训练状态
+            setInterval(checkDataGenerationStatus, 2000); // 定期检查数据生成状态
         };
 
         // 获取并更新CelebA数据集图片数量

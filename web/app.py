@@ -636,6 +636,19 @@ def get_data_generation_status():
     global data_generation_status
     return jsonify(data_generation_status)
 
+@app.route('/data_generation/stop', methods=['POST'])
+def stop_data_generation():
+    """停止数据生成任务"""
+    global data_generation_status
+    try:
+        # 更新状态，标记为停止
+        data_generation_status['running'] = False
+        data_generation_status['message'] = '数据生成已手动停止'
+
+        return jsonify({'message': '数据生成停止请求已发送'})
+    except Exception as e:
+        return jsonify({'error': f'停止数据生成时发生错误: {str(e)}'}), 500
+
 @app.route('/checkpoints', methods=['GET'])
 def get_checkpoints():
     """获取可用的模型检查点列表"""
