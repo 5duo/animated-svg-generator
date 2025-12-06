@@ -11,8 +11,18 @@ import cv2
 from train_face_to_svg import FaceToSVGModel
 
 
-def load_model(model_path, device='cpu'):
+def load_model(model_path, device=None):
     """加载训练好的模型"""
+    # 如果未指定设备，则自动检测
+    if device is None:
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    else:
+        # 如果指定了设备，则检查其可用性
+        if device == 'cuda' and not torch.cuda.is_available():
+            print("警告: CUDA不可用，将使用CPU进行推理")
+            device = 'cpu'
+
+    device = torch.device(device)
     model = FaceToSVGModel()
     model.load_state_dict(torch.load(model_path, map_location=device))
     model.to(device)
@@ -126,7 +136,7 @@ def main():
     parser.add_argument('--input_image', type=str, required=True, help='输入图片路径')
     parser.add_argument('--model_path', type=str, default='./models/face2svg_final_model.pth', help='模型路径')
     parser.add_argument('--output_svg', type=str, default='./output.svg', help='输出SVG路径')
-    parser.add_argument('--device', type=str, default='cpu', help='计算设备')
+    parser.add_argument('--device', type=str, default=None, help='计算设备 (cuda, cpu, 或不指定则自动检测)')
 
     args = parser.parse_args()
 

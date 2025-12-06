@@ -28,4 +28,10 @@ web/total_training_time.txt
 
 # System files
 .DS_Store
-Thumbs.db
+Thumbs.dbmodels/
+task_data/
+*.svg
+*.png
+*.jpg
+*.jpeg
+*.log

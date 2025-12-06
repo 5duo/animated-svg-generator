@@ -15,7 +15,7 @@ CORS(app)  # 启用CORS
 
 import time
 
-# 全局变量用于跟踪训练进程
+# 全局变量用于跟踪任务进程
 training_process = None
 training_status = {
     'running': False,
@@ -24,7 +24,20 @@ training_status = {
     'start_time': None,
     'elapsed_time': 0,  # 本次训练时长（秒）
     'total_training_time': 0,  # 累计训练时长（秒）
-    'log': []  # 训练日志
+    'log': [],  # 训练日志
+    'current_epoch': 0,  # 当前epoch
+    'total_epochs': 0,  # 总epochs数
+    'resume_from_epoch': 0  # 从哪个epoch恢复训练
+}
+
+# 数据生成状态
+data_generation_status = {
+    'running': False,
+    'progress': 0,
+    'message': '等待开始数据生成',
+    'current_file': '',  # 正在处理的文件
+    'total_files': 0,    # 总文件数
+    'processed_files': 0  # 已处理文件数
 }
 
 # 任务状态文件路径
@@ -155,6 +168,10 @@ training_status['total_training_time'] = load_total_training_time()
 def index():
     return send_from_directory('.', 'index.html')
 
+@app.route('/favicon.ico')
+def favicon():
+    return send_from_directory('.', 'favicon.ico')
+
 @app.route('/train', methods=['POST'])
 def start_training():
     global training_process, training_status
@@ -184,14 +201,47 @@ def start_training():
         train_script_path = os.path.abspath(os.path.join('..', 'train_face_to_svg.py'))
         data_dir_abs = os.path.abspath(os.path.join('..', data_dir))
 
+        # 自动检测设备
         cmd = [
             sys.executable, train_script_path,
             '--data_dir', data_dir_abs,
             '--epochs', str(epochs),
             '--batch_size', str(batch_size),
-            '--learning_rate', str(learning_rate),
-            '--device', 'cpu'  # 使用CPU进行训练
+            '--learning_rate', str(learning_rate)
+            # 不指定--device参数，让脚本自动检测
         ]
+
+        # 如果提供了resume_from参数，则添加到命令中
+        resume_from = data.get('resume_from')
+        if resume_from:
+            cmd.extend(['--resume_from', resume_from])
+
+        # 如果提供了model_save_path参数，则添加到命令中
+        model_save_path = data.get('model_save_path')
+        if model_save_path:
+            # 确保目录存在
+            model_dir = os.path.dirname(model_save_path)
+            os.makedirs(model_dir, exist_ok=True)
+            cmd.extend(['--model_path', model_save_path])
+        else:
+            # 使用默认路径
+            default_path = './models/face2svg_final_model.pth'
+            os.makedirs('./models', exist_ok=True)
+            cmd.extend(['--model_path', default_path])
+
+        # 更新训练状态
+        training_status['current_epoch'] = 0
+        training_status['total_epochs'] = int(epochs)
+        training_status['resume_from_epoch'] = 0
+
+        # 如果是从检查点恢复，计算起始epoch
+        if resume_from:
+            import re
+            match = re.search(r'epoch_(\d+)', os.path.basename(resume_from))
+            if match:
+                resume_epoch = int(match.group(1))
+                training_status['resume_from_epoch'] = resume_epoch
+                training_status['current_epoch'] = resume_epoch
 
         print(f"训练命令: {' '.join(cmd)}")  # 调试信息
 
@@ -245,6 +295,7 @@ def generate_data_from_celeba(input_dir, output_dir, max_count=None):
     import json
     import glob
     import time
+    import re
 
     print(f"从CelebA生成训练数据: {input_dir} -> {output_dir}")
     print(f"最大处理数量: {max_count if max_count else '无限制'}")
@@ -255,6 +306,26 @@ def generate_data_from_celeba(input_dir, output_dir, max_count=None):
     os.makedirs(images_output_dir, exist_ok=True)
     os.makedirs(labels_output_dir, exist_ok=True)
 
+    # 获取输出目录中已存在的文件，确保跳过已处理的文件
+    existing_files = set()
+    for ext in ['*.jpg', '*.jpeg', '*.png', '*.bmp', '*.tiff']:
+        existing_files.update(glob.glob(os.path.join(images_output_dir, ext)))
+        existing_files.update(glob.glob(os.path.join(images_output_dir, ext.upper())))
+
+    # 提取已存在文件的文件名（不包含路径和扩展名）
+    existing_basenames = set()
+    existing_numeric_ids = set()  # 存储已存在的数字ID
+    for file_path in existing_files:
+        basename = os.path.splitext(os.path.basename(file_path))[0]
+        existing_basenames.add(basename)
+        # 尝试提取数字ID
+        try:
+            existing_numeric_ids.add(int(basename))
+        except ValueError:
+            pass  # 非数字文件名
+
+    print(f"输出目录中已存在 {len(existing_basenames)} 个文件")
+
     # 支持的图像格式
     extensions = ['*.jpg', '*.jpeg', '*.png', '*.bmp', '*.tiff']
     image_paths = []
@@ -262,25 +333,87 @@ def generate_data_from_celeba(input_dir, output_dir, max_count=None):
         image_paths.extend(glob.glob(os.path.join(input_dir, ext)))
         image_paths.extend(glob.glob(os.path.join(input_dir, ext.upper())))
 
-    if max_count:
-        image_paths = image_paths[:max_count]
+    print(f"在源目录找到 {len(image_paths)} 张图像")
 
-    print(f"找到 {len(image_paths)} 张图像")
+    # 如果已存在数字文件，从最大编号之后开始处理
+    start_id = 1  # 默认从1开始
+    if existing_numeric_ids:
+        start_id = max(existing_numeric_ids) + 1  # 从最大已存在编号之后开始
+        print(f"从编号 {start_id:06d} 开始处理")
+
+    # 按数字编号收集源文件
+    source_files_by_id = {}
+    for img_path in image_paths:
+        basename = os.path.splitext(os.path.basename(img_path))[0]
+        try:
+            file_id = int(basename)
+            source_files_by_id[file_id] = img_path
+        except ValueError:
+            # 非数字文件名，暂时忽略，或者也加入处理
+            pass
+
+    # 确定要处理的文件范围
+    if max_count:
+        # 从start_id开始，尝试处理最多max_count个文件
+        filtered_image_paths = []
+        current_id = start_id
+        processed_count = 0
+
+        while processed_count < max_count:
+            if current_id in source_files_by_id:
+                src_path = source_files_by_id[current_id]
+                # 检查目标文件是否已存在
+                basename = os.path.splitext(os.path.basename(src_path))[0]
+                if basename not in existing_basenames:
+                    filtered_image_paths.append(src_path)
+                    processed_count += 1
+            current_id += 1
+
+            # 防止无限循环
+            if current_id > 300000:  # CelebA数据集的最大编号
+                break
+    else:
+        # 如果没有限制，则处理所有未处理的文件
+        filtered_image_paths = []
+        for img_path in image_paths:
+            basename = os.path.splitext(os.path.basename(img_path))[0]
+            if basename not in existing_basenames:
+                filtered_image_paths.append(img_path)
+
+    print(f"需要处理 {len(filtered_image_paths)} 张新图像")
+
+    # 限制处理数量 - 确保不超过指定的最大数量
+    if max_count and len(filtered_image_paths) > max_count:
+        filtered_image_paths = filtered_image_paths[:max_count]
+        print(f"限制处理数量为 {max_count} 张")
+    else:
+        print(f"将处理 {len(filtered_image_paths)} 张图像")
+
+    # 更新数据生成状态
+    global data_generation_status
+    data_generation_status['total_files'] = len(filtered_image_paths)
+    data_generation_status['processed_files'] = 0
 
     processed_count = 0
+    # skipped_count现在只统计本次处理中因各种原因跳过的文件数
     skipped_count = 0
 
-    # 用于更新状态
-    global training_status
+    # 优先使用GPU进行处理
+    import os
+    # 不设置CUDA_VISIBLE_DEVICES，让PyTorch自动检测可用的GPU
 
-    for i, img_path in enumerate(image_paths):
-        if training_status.get('running', False):  # 如果训练正在运行，则停止生成
-            print("检测到训练正在运行，停止数据生成")
+    for i, img_path in enumerate(filtered_image_paths):
+        if not data_generation_status['running']:  # 如果数据生成已停止，则退出
+            print("数据生成被停止")
             break
 
-        training_status['message'] = f'正在处理CelebA数据: {i+1}/{len(image_paths)} - {os.path.basename(img_path)}'
+        # 更新进度和当前文件
+        data_generation_status['current_file'] = os.path.basename(img_path)
+        data_generation_status['processed_files'] = i + 1
+        data_generation_status['progress'] = int(((i + 1) / len(filtered_image_paths)) * 100) if len(filtered_image_paths) > 0 else 0
+        data_generation_status['message'] = f'正在处理: {os.path.basename(img_path)} ({i+1}/{len(filtered_image_paths)})'
 
-        print(f"处理图像 {i+1}/{len(image_paths)}: {os.path.basename(img_path)}")
+        print(f"处理图像 {i+1}/{len(filtered_image_paths)}: {os.path.basename(img_path)}")
 
         try:
             # 读取图像
@@ -343,7 +476,7 @@ def generate_data_from_celeba(input_dir, output_dir, max_count=None):
                 face_params['eye_left_x'] = float(x + w * 0.3)
                 face_params['eye_left_y'] = float(y + h * 0.3)
                 face_params['eye_right_x'] = float(x + w * 0.7)
-                face_params['eye_right_y'] = float(y + h * 0.3)
+                face_params['eye_right_y'] = float(y + h * 0.7)
 
             # 嘴型检测和分类
             if len(smiles) > 0:
@@ -369,21 +502,28 @@ def generate_data_from_celeba(input_dir, output_dir, max_count=None):
             img = Image.open(img_path).convert('RGB')
             img = img.resize((224, 224), Image.Resampling.LANCZOS)
 
-            # 保存调整大小后的图像
+            # 构造输出路径，使用原文件名
             base_name = os.path.splitext(os.path.basename(img_path))[0]
             output_img_path = os.path.join(images_output_dir, f"{base_name}.jpg")
+            output_label_path = os.path.join(labels_output_dir, f"{base_name}.json")
+
+            # 保存调整大小后的图像
             img.save(output_img_path, 'JPEG', quality=95)
 
             # 保存标签文件
-            output_label_path = os.path.join(labels_output_dir, f"{base_name}.json")
             with open(output_label_path, 'w', encoding='utf-8') as f:
                 json.dump(face_params, f, indent=2, ensure_ascii=False)
 
             processed_count += 1
 
+            # 更新进度
+            data_generation_status['processed_files'] = i + 1
+            data_generation_status['progress'] = int(((i + 1) / len(filtered_image_paths)) * 100) if len(filtered_image_paths) > 0 else 0
+            data_generation_status['message'] = f'已处理: {os.path.basename(img_path)} ({i+1}/{len(filtered_image_paths)})'
+
             if processed_count % 50 == 0:
                 print(f"  已处理 {processed_count} 张图像")
-                training_status['message'] = f'CelebA数据生成: 已处理 {processed_count} 张图像'
+                data_generation_status['message'] = f'CelebA数据生成: 已处理 {processed_count} 张图像'
 
         except Exception as e:
             print(f"处理图像时出错 {os.path.basename(img_path)}: {str(e)}")
@@ -434,23 +574,42 @@ def stop_training():
 @app.route('/generate_from_celeba', methods=['POST'])
 def generate_from_celeba():
     """从CelebA数据集生成训练数据"""
-    global training_status
+    global data_generation_status
 
     try:
         data = request.json
-        input_dir = data.get('input_dir', '../celeba_data/img_align_celeba')
+        input_dir = data.get('input_dir', '../data/img_align_celeba/img_align_celeba')
         output_dir = data.get('output_dir', '../data/faces_with_labels')
         max_count = data.get('max_count', 2000)  # 默认处理2000张图片
 
-        # 检查是否已有任务在运行
+        # 检查是否已有任务在运行（包括训练和数据生成）
         if training_status.get('running', False):
             return jsonify({'error': '有训练任务正在进行，无法生成新数据'}), 400
+        if data_generation_status.get('running', False):
+            return jsonify({'error': '有数据生成任务正在进行，无法启动新任务'}), 400
 
         # 更新状态
-        training_status['running'] = True
-        training_status['progress'] = 0
-        training_status['message'] = '正在从CelebA数据集生成训练数据...'
+        data_generation_status['running'] = True
+        data_generation_status['progress'] = 0
+        data_generation_status['message'] = '正在从CelebA数据集生成训练数据...'
 
+        # 在后台线程中启动数据生成
+        thread = threading.Thread(
+            target=run_data_generation,
+            args=(input_dir, output_dir, max_count)
+        )
+        thread.start()
+
+        return jsonify({'message': '数据生成已启动'})
+    except Exception as e:
+        data_generation_status['running'] = False
+        data_generation_status['message'] = f'启动数据生成时出现错误: {str(e)}'
+        return jsonify({'error': f'启动数据生成失败: {str(e)}'}), 500
+
+def run_data_generation(input_dir, output_dir, max_count):
+    """在后台线程中运行数据生成"""
+    global data_generation_status
+    try:
         # 启动数据生成
         processed_count, skipped_count = generate_data_from_celeba(
             input_dir=input_dir,
@@ -459,19 +618,102 @@ def generate_from_celeba():
         )
 
         # 完成后更新状态
-        training_status['running'] = False
-        training_status['progress'] = 100
-        training_status['message'] = f'CelebA数据生成完成! 成功处理: {processed_count} 张, 跳过: {skipped_count} 张'
+        data_generation_status['running'] = False
+        data_generation_status['progress'] = 100
+        data_generation_status['message'] = f'CelebA数据生成完成! 成功处理: {processed_count} 张, 跳过: {skipped_count} 张'
+        data_generation_status['processed_count'] = processed_count
+        data_generation_status['skipped_count'] = skipped_count
 
-        return jsonify({
-            'message': f'数据生成完成! 成功处理: {processed_count} 张, 跳过: {skipped_count} 张',
-            'processed_count': processed_count,
-            'skipped_count': skipped_count
-        })
+        print(f"数据生成完成: 成功处理 {processed_count} 张, 跳过 {skipped_count} 张")
     except Exception as e:
-        training_status['running'] = False
-        training_status['message'] = f'数据生成过程中出现错误: {str(e)}'
-        return jsonify({'error': f'数据生成失败: {str(e)}'}), 500
+        data_generation_status['running'] = False
+        data_generation_status['message'] = f'数据生成过程中出现错误: {str(e)}'
+        print(f"数据生成错误: {str(e)}")
+
+@app.route('/data_generation/status', methods=['GET'])
+def get_data_generation_status():
+    """获取数据生成状态"""
+    global data_generation_status
+    return jsonify(data_generation_status)
+
+@app.route('/checkpoints', methods=['GET'])
+def get_checkpoints():
+    """获取可用的模型检查点列表"""
+    import os
+    import glob
+
+    models_dir = '../models'
+    checkpoint_pattern = os.path.join(models_dir, 'face2svg_checkpoint_*.pth')
+
+    checkpoint_files = glob.glob(checkpoint_pattern)
+
+    # 提取epoch数字并排序
+    def extract_epoch(filename):
+        import re
+        match = re.search(r'epoch_(\d+)', filename)
+        return int(match.group(1)) if match else 0
+
+    checkpoint_files.sort(key=lambda x: extract_epoch(x), reverse=True)
+
+    checkpoints = []
+    for filepath in checkpoint_files:
+        filename = os.path.basename(filepath)
+        checkpoints.append({
+            'filename': filename,
+            'path': filepath,
+            'epoch': extract_epoch(filepath),
+            'size': os.path.getsize(filepath),
+            'modified': os.path.getmtime(filepath)
+        })
+
+    return jsonify({
+        'checkpoints': checkpoints,
+        'count': len(checkpoints)
+    })
+
+@app.route('/dataset/stats', methods=['GET'])
+def get_dataset_stats():
+    """获取训练数据集统计信息"""
+    import os
+    import time
+
+    # 检测人脸数据集目录
+    faces_images_dir = os.path.join('..', 'data', 'faces_with_labels', 'images')
+    faces_labels_dir = os.path.join('..', 'data', 'faces_with_labels', 'labels')
+
+    image_count = 0
+    label_count = 0
+    latest_update = 0
+
+    if os.path.exists(faces_images_dir):
+        for filename in os.listdir(faces_images_dir):
+            if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tiff')):
+                image_count += 1
+                # 检查文件修改时间
+                file_time = os.path.getmtime(os.path.join(faces_images_dir, filename))
+                if file_time > latest_update:
+                    latest_update = file_time
+
+    if os.path.exists(faces_labels_dir):
+        for filename in os.listdir(faces_labels_dir):
+            if filename.lower().endswith('.json'):
+                label_count += 1
+                # 检查文件修改时间
+                file_time = os.path.getmtime(os.path.join(faces_labels_dir, filename))
+                if file_time > latest_update:
+                    latest_update = file_time
+
+    # 转换时间戳为可读格式
+    latest_update_str = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(latest_update)) if latest_update > 0 else 'N/A'
+
+    return jsonify({
+        'image_count': image_count,
+        'label_count': label_count,
+        'latest_update': latest_update_str,
+        'images_dir': faces_images_dir,
+        'labels_dir': faces_labels_dir,
+        'status': '就绪' if image_count > 0 else '缺少数据，请上传人脸图像或准备数据集'
+    })
 
 @app.route('/train/kill_all', methods=['POST'])
 def kill_all_training():
@@ -535,8 +777,8 @@ def generate_svg():
             sys.executable, '../inference.py',  # 修正路径到上一级目录
             '--input_image', temp_input_path,
             '--model_path', model_path,
-            '--output_svg', output_path,
-            '--device', 'cpu'
+            '--output_svg', output_path
+            # 不指定--device参数，让脚本自动检测
         ]
 
         # 添加可选的控制参数
@@ -661,9 +903,19 @@ def run_training(cmd):
                         if match:
                             current_epoch = int(match.group(1))
                             total_epochs = int(match.group(2))
-                            # 计算进度：20%用于数据处理，剩余80%用于训练
-                            training_progress = int(20 + (current_epoch / total_epochs) * 80)
-                            training_status['progress'] = training_progress
+                            training_status['current_epoch'] = current_epoch  # 更新当前epoch
+
+                            # 计算进度：从检查点恢复时需要考虑起始点
+                            resume_from = training_status['resume_from_epoch']
+                            # 计算从resume_from开始的相对进度
+                            if total_epochs > resume_from and resume_from > 0:
+                                # 计算当前在总训练中的位置：20% for data prep + (current_epoch - resume_from) / (total_epochs - resume_from) * 80%
+                                training_progress = int(20 + max(0, (current_epoch - resume_from) / max(1, total_epochs - resume_from) * 80))
+                            else:
+                                # 正常训练，没有从检查点恢复或resume_from为0
+                                training_progress = int(20 + (current_epoch / total_epochs) * 80)
+
+                            training_status['progress'] = max(training_status['progress'], training_progress)  # 确保进度不会回退
                             training_status['message'] = f'训练中 - 正在执行第 {current_epoch}/{total_epochs} 轮'
                     elif '正在处理第' in line and '当前批次' in line:
                         # 解析当前批次信息
@@ -705,12 +957,25 @@ def run_training(cmd):
                         total_epochs = int(epoch_match.group(2))
                         current_batch = int(batch_match.group(1))
                         total_batches = int(batch_match.group(2))
+                        training_status['current_epoch'] = current_epoch  # 更新当前epoch
 
-                        # 计算进度
-                        epoch_progress = (current_epoch - 1) / total_epochs
-                        batch_progress = current_batch / (total_batches * total_epochs)
-                        overall_progress = min(20 + (epoch_progress + batch_progress) * 80, 100)
-                        training_status['progress'] = int(overall_progress)
+                        # 计算进度：从检查点恢复时需要考虑起始点
+                        resume_from = training_status['resume_from_epoch']
+
+                        if total_epochs > resume_from and resume_from > 0:
+                            # 考虑从resume_from开始的进度，每轮内部也要按批次计算进度
+                            epoch_completion = max(0, current_epoch - resume_from)  # 从resume_from开始完成的epoch数
+                            total_epochs_to_complete = total_epochs - resume_from  # 总共需要完成的epoch数
+                            epoch_progress = epoch_completion / max(1, total_epochs_to_complete) if total_epochs_to_complete > 0 else 0
+                            batch_progress = current_batch / (total_batches * total_epochs_to_complete) if total_epochs_to_complete > 0 else 0
+                            overall_progress = min(20 + (epoch_progress + batch_progress) * 80, 100)
+                        else:
+                            # 正常训练，没有从检查点恢复或resume_from为0
+                            epoch_progress = (current_epoch - 1) / total_epochs
+                            batch_progress = current_batch / (total_batches * total_epochs)
+                            overall_progress = min(20 + (epoch_progress + batch_progress) * 80, 100)
+
+                        training_status['progress'] = max(training_status['progress'], int(overall_progress))  # 确保进度不会回退
 
                         # 提取损失值
                         loss_match = re.search(r'Loss: ([\d.]+)', line)
@@ -732,7 +997,17 @@ def run_training(cmd):
                     if epoch_match:
                         current_epoch = int(epoch_match.group(1))
                         total_epochs = int(epoch_match.group(2))
-                        training_status['progress'] = int(20 + (current_epoch / total_epochs) * 80)
+                        training_status['current_epoch'] = current_epoch  # 更新当前epoch
+
+                        # 计算进度：从检查点恢复时需要考虑起始点
+                        resume_from = training_status['resume_from_epoch']
+                        if total_epochs > resume_from and resume_from > 0:
+                            # 计算从resume_from开始的相对进度
+                            training_status['progress'] = int(20 + max(0, (current_epoch - resume_from) / max(1, total_epochs - resume_from) * 80))
+                        else:
+                            # 正常训练，没有从检查点恢复或resume_from为0
+                            training_status['progress'] = int(20 + (current_epoch / total_epochs) * 80)
+
                         training_status['message'] = f'第 {current_epoch} 轮训练完成'
                 elif 'CHECKPOINT:' in line:
                     training_status['message'] = '正在保存模型检查点...'
@@ -764,14 +1039,35 @@ def run_training(cmd):
                         if batch_match:
                             current_batch = int(batch_match.group(1))
                             total_batches = int(batch_match.group(2))
-                            # 基于epoch和batch双重信息计算进度
-                            # 每个epoch有total_batches个批次，整体进度 = (当前epoch-1 + 当前batch/总batch数) / 总epoch
-                            overall_progress = ((current_epoch - 1) + (current_batch / total_batches)) / total_epochs
-                            training_status['progress'] = int(overall_progress * 100)
+                            training_status['current_epoch'] = current_epoch  # 更新当前epoch
+
+                            # 计算进度：从检查点恢复时需要考虑起始点
+                            resume_from = training_status['resume_from_epoch']
+                            if total_epochs > resume_from and resume_from > 0:
+                                # 基于epoch和batch双重信息计算进度，从resume_from开始
+                                epoch_completion = max(0, current_epoch - resume_from)  # 从resume_from开始完成的epoch数
+                                total_epochs_to_complete = total_epochs - resume_from  # 总共需要完成的epoch数
+                                overall_progress = ((epoch_completion) + (current_batch / total_batches)) / max(1, total_epochs_to_complete)
+                                training_status['progress'] = min(100, int(20 + overall_progress * 80))  # 将进度映射到20-100之间
+                            else:
+                                # 正常训练，没有从检查点恢复或resume_from为0
+                                overall_progress = ((current_epoch - 1) + (current_batch / total_batches)) / total_epochs
+                                training_status['progress'] = int(overall_progress * 100)
+
                             training_status['message'] = f'训练中 - Epoch {current_epoch}/{total_epochs}, Batch {current_batch}/{total_batches}{loss_info}'
                         else:
                             # 如果没有批次信息，就基于epoch计算进度
-                            training_status['progress'] = int((current_epoch / total_epochs) * 100)
+                            training_status['current_epoch'] = current_epoch  # 更新当前epoch
+
+                            # 计算进度：从检查点恢复时需要考虑起始点
+                            resume_from = training_status['resume_from_epoch']
+                            if total_epochs > resume_from and resume_from > 0:
+                                # 计算从resume_from开始的相对进度
+                                training_status['progress'] = int(20 + max(0, (current_epoch - resume_from) / max(1, total_epochs - resume_from) * 80))
+                            else:
+                                # 正常训练，没有从检查点恢复或resume_from为0
+                                training_status['progress'] = int((current_epoch / total_epochs) * 100)
+
                             training_status['message'] = f'训练中 - Epoch {current_epoch}/{total_epochs} 完成{loss_info}'
 
         # 等待进程结束
@@ -822,13 +1118,47 @@ def get_system_stats():
         memory_available = memory.available
         memory_used = memory.used
 
+        # GPU使用情况（如果可用）
+        gpu_info = {}
+        try:
+            import torch
+            if torch.cuda.is_available():
+                gpu_count = torch.cuda.device_count()
+                gpu_info = {
+                    'available': True,
+                    'count': gpu_count,
+                    'gpus': []
+                }
+
+                for i in range(gpu_count):
+                    gpu_info['gpus'].append({
+                        'id': i,
+                        'name': torch.cuda.get_device_name(i),
+                        'memory_used': torch.cuda.memory_allocated(i),
+                        'memory_total': torch.cuda.get_device_properties(i).total_memory,
+                        'memory_percent': (torch.cuda.memory_allocated(i) / torch.cuda.get_device_properties(i).total_memory) * 100
+                    })
+            else:
+                gpu_info = {
+                    'available': False,
+                    'count': 0,
+                    'gpus': []
+                }
+        except Exception:
+            gpu_info = {
+                'available': False,
+                'count': 0,
+                'gpus': []
+            }
+
         # 返回系统资源信息
         return jsonify({
             'cpu_percent': cpu_percent,
             'memory_percent': memory_percent,
             'memory_total': memory_total,
             'memory_available': memory_available,
-            'memory_used': memory_used
+            'memory_used': memory_used,
+            'gpu_info': gpu_info
         })
     except Exception as e:
         return jsonify({'error': f'获取系统资源时发生错误: {str(e)}'}), 500

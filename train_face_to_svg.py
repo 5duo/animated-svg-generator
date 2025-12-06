@@ -260,9 +260,18 @@ class FaceToSVGModel(nn.Module):
         }
 
 
-def train_model(data_dir, epochs=50, batch_size=32, learning_rate=0.001, device='cpu'):
+def train_model(data_dir, epochs=50, batch_size=32, learning_rate=0.001, device=None, resume_from=None, model_path='./models/face2svg_final_model.pth'):
     """训练模型"""
-    device = torch.device(device if torch.cuda.is_available() and device != 'cpu' else 'cpu')
+    # 如果未指定设备，则自动检测
+    if device is None:
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    else:
+        # 如果指定了设备，则检查其可用性
+        if device == 'cuda' and not torch.cuda.is_available():
+            print("警告: CUDA不可用，将使用CPU进行训练")
+            device = 'cpu'
+
+    device = torch.device(device)
     print(f"INFO: 使用设备: {device}")
     print(f"INFO: 开始加载数据集从: {data_dir}")
 
@@ -298,11 +307,20 @@ def train_model(data_dir, epochs=50, batch_size=32, learning_rate=0.001, device=
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     print("INFO: 模型、损失函数和优化器创建完成")
 
+    start_epoch = 0  # 默认从第0个epoch开始
+
+    # 如果需要从检查点恢复训练
+    if resume_from and os.path.exists(resume_from):
+        print(f"INFO: 正在从检查点 {resume_from} 恢复训练...")
+        start_epoch = load_checkpoint(model, optimizer, resume_from, device)
+    elif resume_from:
+        print(f"警告: 检查点文件 {resume_from} 不存在，将从头开始训练")
+
     print("INFO: 开始训练...")
     model.train()
-    
-    print(f"INFO: 开始训练循环，总轮数: {epochs}")
-    for epoch in range(epochs):
+
+    print(f"INFO: 开始训练循环，总轮数: {epochs}，从第 {start_epoch} 轮开始")
+    for epoch in range(start_epoch, epochs):
         print(f"INFO: 开始第 {epoch+1}/{epochs} 轮训练...")
         total_reg_loss = 0.0
         total_cls_loss = 0.0
@@ -360,7 +378,13 @@ def train_model(data_dir, epochs=50, batch_size=32, learning_rate=0.001, device=
 
         # 保存模型检查点
         if (epoch + 1) % 10 == 0:
-            checkpoint_path = f"./models/face2svg_checkpoint_epoch_{epoch+1}.pth"
+            # 从数据目录提取数据集名称
+            data_dir_parts = data_dir.split('/')
+            dataset_name = data_dir_parts[-1] if data_dir_parts[-1] else data_dir_parts[-2] if len(data_dir_parts) > 1 else 'dataset'
+            # 清理数据集名称，只保留字母数字
+            clean_dataset_name = ''.join(c for c in dataset_name if c.isalnum()) or 'dataset'
+
+            checkpoint_path = f"./models/face2svg_checkpoint_{clean_dataset_name}_e{epochs}_b{batch_size}_lr{learning_rate}_epoch_{epoch+1}.pth"
             os.makedirs("./models", exist_ok=True)
             torch.save({
                 'epoch': epoch,
@@ -370,13 +394,21 @@ def train_model(data_dir, epochs=50, batch_size=32, learning_rate=0.001, device=
             print(f"CHECKPOINT: 模型检查点已保存: {checkpoint_path}")
 
     # 保存最终模型
-    print("INFO: 训练完成，正在保存最终模型...")
-    final_model_path = "./models/face2svg_final_model.pth"
-    torch.save(model.state_dict(), final_model_path)
-    print(f"SUCCESS: 最终模型已保存: {final_model_path}")
+    print(f"INFO: 训练完成，正在保存最终模型到: {model_path}")
+    torch.save(model.state_dict(), model_path)
+    print(f"SUCCESS: 最终模型已保存: {model_path}")
 
     return model
 
+
+def load_checkpoint(model, optimizer, checkpoint_path, device='cpu'):
+    """从检查点加载模型和优化器状态"""
+    checkpoint = torch.load(checkpoint_path, map_location=device)
+    model.load_state_dict(checkpoint['model_state_dict'])
+    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    epoch = checkpoint['epoch']
+    print(f"INFO: 从检查点加载模型，开始于第 {epoch + 1} 轮")
+    return epoch + 1  # 返回下一个要训练的轮数
 
 def main():
     parser = argparse.ArgumentParser(description='训练人脸到SVG参数的模型')
@@ -385,18 +417,23 @@ def main():
     parser.add_argument('--batch_size', type=int, default=32, help='批次大小')
     parser.add_argument('--learning_rate', type=float, default=0.001, help='学习率')
     parser.add_argument('--device', type=str, default='cpu', help='计算设备 (cpu 或 cuda)')
+    parser.add_argument('--resume_from', type=str, help='从检查点文件继续训练')
+    parser.add_argument('--model_path', type=str, default='./models/face2svg_final_model.pth', help='模型保存路径')
 
     args = parser.parse_args()
 
     # 确保模型目录存在
-    os.makedirs("./models", exist_ok=True)
+    model_dir = os.path.dirname(args.model_path)
+    os.makedirs(model_dir, exist_ok=True)
 
     trained_model = train_model(
         data_dir=args.data_dir,
         epochs=args.epochs,
         batch_size=args.batch_size,
         learning_rate=args.learning_rate,
-        device=args.device
+        device=args.device,
+        resume_from=args.resume_from,
+        model_path=args.model_path
     )
 
 

@@ -146,7 +146,7 @@ def main():
     parser.add_argument('--output_svg', type=str, default='./controllable_output.svg', help='输出SVG路径')
     parser.add_argument('--mouth_type', type=str, choices=['A', 'O', 'E'], default=None, help='强制设置嘴型 (A/O/E)')
     parser.add_argument('--blink', action='store_true', help='启用眨眼效果')
-    
+
     args = parser.parse_args()
     
     detector = ControllableFeatureDetector()
@@ -177,6 +177,11 @@ def main():
         controls = {
             'mouth_type': args.mouth_type or features.get('mouth_type', 'E'),
             'is_blinking': args.blink or features.get('is_blinking', False),
+            'face_color': '#f8d9e9',
+            'stroke_color': '#d9a8c8',
+            'stroke_width': '2',
+            'eye_color': 'white',
+            'pupil_color': '#333',
         }
         svg_content = detector.generate_controllable_svg(features, image_shape, controls)
     

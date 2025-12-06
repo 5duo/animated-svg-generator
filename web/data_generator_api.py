@@ -60,6 +60,29 @@ def add_data_generation_routes(app):
         except Exception as e:
             return jsonify({'error': f'获取数据状态时发生错误: {str(e)}'}), 500
 
+    @app.route('/celeba_image_count', methods=['GET'])
+    def get_celeba_image_count():
+        """获取CelebA原始数据集图片数量"""
+        try:
+            # 检测CelebA数据集目录
+            celeba_dir = os.path.join('..', 'data', 'img_align_celeba', 'img_align_celeba')
+
+            image_count = 0
+
+            if os.path.exists(celeba_dir):
+                # 统计所有图片文件
+                for filename in os.listdir(celeba_dir):
+                    if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.gif')):
+                        image_count += 1
+
+            return jsonify({
+                'image_count': image_count,
+                'celeba_dir': celeba_dir,
+                'status': '就绪' if image_count > 0 else 'CelebA数据目录为空或不存在'
+            })
+        except Exception as e:
+            return jsonify({'error': f'获取CelebA图片数量时发生错误: {str(e)}'}), 500
+
     @app.route('/data/clear', methods=['POST'])
     def clear_training_data():
         """清空训练数据"""

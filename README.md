@@ -78,14 +78,14 @@ pip install -r requirements.txt
 ### 2. 数据集准备
 
 #### 使用已下载的CelebA数据集（推荐）
-CelebA数据集已下载并解压到 `./data/img_align_celeba/` 目录，可以直接使用：
+CelebA数据集已下载并解压到 `./data/img_align_celeba/` 目录（实际图片在 `./data/img_align_celeba/img_align_celeba/`），可以直接使用：
 ```bash
 # 确保虚拟环境已激活
 source venv/bin/activate  # Linux/Mac
 # 或
 venv\Scripts\activate   # Windows
 
-python prepare_faces_dataset.py --input_dir ./data/img_align_celeba
+python prepare_faces_dataset.py --input_dir ./data/img_align_celeba/img_align_celeba
 ```
 
 准备好的数据会存储在 `./data/faces_with_labels/` 目录，其中包含：
@@ -194,7 +194,7 @@ python app.py
 ## 注意事项
 
 1. 训练需要大量计算资源，建议使用GPU
-2. CelebA数据集已下载到 `./data/img_align_celeba/` 目录
+2. CelebA数据集已下载到 `./data/img_align_celeba/` 目录（实际图片在 `./data/img_align_celeba/img_align_celeba/`）
 3. 模型训练时间取决于数据量和硬件配置
 4. 确保有足够的磁盘空间存储模型和中间数据
 5. 从CelebA生成数据可能需要较长时间，建议设置合适的最大处理数量
