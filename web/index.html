@@ -1,0 +1,1052 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SVG角色生成器 - 人脸到SVG转换系统</title>
+    <style>
+        :root {
+            --primary: #6a11cb;
+            --secondary: #2575fc;
+            --accent: #3498db;
+            --success: #2ecc71;
+            --warning: #f39c12;
+            --danger: #e74c3c;
+            --dark: #2c3e50;
+            --light: #f8f9fa;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        header {
+            background: linear-gradient(90deg, var(--primary) 0%, var(--secondary) 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+            border-radius: 10px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+
+        @media (max-width: 1024px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .panel {
+            background: white;
+            border-radius: 10px;
+            padding: 25px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+            transition: transform 0.3s ease;
+        }
+
+        .panel:hover {
+            transform: translateY(-5px);
+        }
+
+        .panel h2 {
+            color: var(--dark);
+            border-bottom: 3px solid var(--accent);
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: var(--dark);
+        }
+
+        input[type="text"],
+        input[type="number"],
+        input[type="file"],
+        select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e1e5e9;
+            border-radius: 6px;
+            font-size: 16px;
+            transition: border-color 0.3s ease;
+        }
+
+        input[type="text"]:focus,
+        input[type="number"]:focus,
+        input[type="file"]:focus,
+        select:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+        }
+
+        button {
+            background: linear-gradient(90deg, var(--primary), var(--secondary));
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            margin: 5px;
+            min-width: 120px;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 15px rgba(0,0,0,0.15);
+        }
+
+        button:disabled {
+            background: #bdc3c7;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .btn-stop {
+            background: linear-gradient(90deg, var(--warning), #d35400);
+        }
+
+        .btn-danger {
+            background: linear-gradient(90deg, var(--danger), #c0392b);
+        }
+
+        .status {
+            margin-top: 15px;
+            padding: 15px;
+            border-radius: 6px;
+            display: none;
+        }
+
+        .status.success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+            display: block;
+        }
+
+        .status.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+            display: block;
+        }
+
+        .status.info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+            display: block;
+        }
+
+        .progress-container {
+            margin: 20px 0;
+        }
+
+        progress {
+            width: 100%;
+            height: 25px;
+            border-radius: 12px;
+            overflow: hidden;
+            border: none;
+            background-color: #f0f0f0;
+        }
+
+        progress::-webkit-progress-bar {
+            background-color: #f0f0f0;
+            border-radius: 12px;
+        }
+
+        progress::-webkit-progress-value {
+            background: linear-gradient(90deg, var(--primary), var(--secondary));
+            border-radius: 12px;
+        }
+
+        .progress-text {
+            text-align: center;
+            font-weight: bold;
+            margin-top: 10px;
+        }
+
+        .log-container {
+            height: 250px;
+            overflow-y: auto;
+            background-color: #000;
+            color: #0f0;
+            padding: 15px;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            margin: 15px 0;
+        }
+
+        .svg-container {
+            width: 100%;
+            height: 300px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: white;
+            overflow: auto;
+            margin: 20px 0;
+        }
+
+        .svg-container svg {
+            max-width: 100%;
+            max-height: 100%;
+        }
+
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .resource-monitor {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .resource-item {
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 6px;
+        }
+
+        .resource-bar {
+            height: 10px;
+            background-color: #e9ecef;
+            border-radius: 5px;
+            margin-top: 5px;
+            overflow: hidden;
+        }
+
+        .resource-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--primary), var(--secondary));
+            border-radius: 5px;
+            transition: width 0.5s ease;
+        }
+
+        .dataset-info {
+            background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+
+        .dataset-info h3 {
+            margin-top: 0;
+            color: white;
+        }
+
+        .action-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin: 15px 0;
+        }
+
+        .action-buttons .btn-full {
+            flex: 1 1 100%;
+        }
+
+        .action-buttons button {
+            flex: 1 1 auto;
+        }
+
+        .data-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .stat-number {
+            font-size: 2em;
+            font-weight: bold;
+            color: var(--primary);
+        }
+
+        .stat-label {
+            color: #666;
+            margin-top: 5px;
+        }
+
+        .training-info {
+            margin-top: 15px;
+            padding: 15px;
+            background-color: #e8f4fd;
+            border-radius: 6px;
+        }
+
+        .training-info h4 {
+            margin-top: 0;
+            color: var(--dark);
+        }
+
+        .time-info {
+            display: flex;
+            justify-content: space-between;
+            font-weight: bold;
+            margin-top: 10px;
+        }
+
+        .model-control {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 6px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎨 SVG角色生成器</h1>
+            <p class="subtitle">基于深度学习的人脸到SVG转换系统</p>
+        </header>
+
+        <div class="main-content">
+            <div class="panel">
+                <h2>🔧 模型训练配置</h2>
+
+                <div class="dataset-info">
+                    <h3>✅ CelebA数据集已就绪</h3>
+                    <p>数据路径: <strong>./data/img_align_celeba/</strong></p>
+                    <p>已预处理: <strong>./data/faces_with_labels/</strong></p>
+                    <p>包含: <strong>20,000+</strong> 张人脸图像及标签</p>
+                </div>
+
+                <div class="form-group">
+                    <label for="dataDir">数据目录:</label>
+                    <input type="text" id="dataDir" value="./data/faces_with_labels/images">
+                </div>
+
+                <div class="form-group">
+                    <label for="epochs">训练轮数:</label>
+                    <input type="number" id="epochs" value="50" min="1" max="500">
+                </div>
+
+                <div class="form-group">
+                    <label for="batchSize">批次大小:</label>
+                    <input type="number" id="batchSize" value="32" min="1" max="128">
+                </div>
+
+                <div class="form-group">
+                    <label for="learningRate">学习率:</label>
+                    <input type="number" id="learningRate" value="0.001" step="0.0001" min="0.00001" max="0.1">
+                </div>
+
+                <div class="form-group">
+                    <label for="modelSavePath">模型保存路径:</label>
+                    <input type="text" id="modelSavePath" value="./models/face2svg_final_model.pth">
+                </div>
+
+                <div class="action-buttons">
+                    <button id="startTraining">🚀 开始训练</button>
+                    <button id="stopTraining" class="btn-stop" disabled>🛑 停止训练</button>
+                    <button id="killAllTraining" class="btn-danger">💀 终止所有训练</button>
+                </div>
+
+                <div class="data-stats">
+                    <div class="stat-card">
+                        <div class="stat-number" id="imageCount">--</div>
+                        <div class="stat-label">图像数量</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number" id="labelCount">--</div>
+                        <div class="stat-label">标签数量</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number" id="modelCount">--</div>
+                        <div class="stat-label">模型数量</div>
+                    </div>
+                </div>
+
+                <div class="training-info">
+                    <h4>📈 训练信息</h4>
+                    <p>使用ResNet50作为骨干网络，同时进行面部几何参数回归和嘴型分类任务。</p>
+                    <p>模型会学习从人脸图像预测: 面部椭圆参数、眼睛位置、嘴型类别(A/O/E)</p>
+                </div>
+
+                <div class="model-control">
+                    <h4>🔄 数据管理</h4>
+                    <div class="form-group">
+                        <label for="celebaInputDir">CelebA输入目录:</label>
+                        <input type="text" id="celebaInputDir" value="../celeba_data/img_align_celeba">
+                    </div>
+                    <div class="form-group">
+                        <label for="celebaOutputDir">输出目录:</label>
+                        <input type="text" id="celebaOutputDir" value="../data/faces_with_labels">
+                    </div>
+                    <div class="form-group">
+                        <label for="celebaMaxCount">最大处理数量:</label>
+                        <input type="number" id="celebaMaxCount" value="2000" min="1" max="10000">
+                    </div>
+                    <button id="generateFromCelebA">🔄 从CelebA生成训练数据</button>
+                    <div id="celebaStatus" class="status" style="margin-top: 10px;"></div>
+                </div>
+            </div>
+
+            <div class="panel">
+                <h2>📊 训练监控</h2>
+
+                <div class="progress-container">
+                    <label>训练进度:</label>
+                    <progress id="trainingProgress" value="0" max="100"></progress>
+                    <div class="progress-text" id="progressText">等待开始...</div>
+                </div>
+
+                <div class="time-info">
+                    <div>本次训练: <span id="elapsedTime">00:00:00</span></div>
+                    <div>累计训练: <span id="totalTime">00:00:00</span></div>
+                </div>
+
+                <div id="currentTask" style="margin: 10px 0; padding: 10px; background-color: #f8f9fa; border-radius: 6px; font-style: italic;">
+                        当前任务: <span id="taskDetails">准备开始训练</span>
+                </div>
+
+                <h3>📋 训练日志</h3>
+                <div class="log-container" id="trainingLog">
+                    训练日志将在此显示...
+                </div>
+
+                <div class="resource-monitor">
+                    <div class="resource-item">
+                        <div>CPU使用率: <span id="cpuUsage">--%</span></div>
+                        <div class="resource-bar">
+                            <div class="resource-bar-fill" id="cpuBar" style="width: 0%;"></div>
+                        </div>
+                    </div>
+                    <div class="resource-item">
+                        <div>内存使用率: <span id="memoryUsage">--%</span></div>
+                        <div class="resource-bar">
+                            <div class="resource-bar-fill" id="memoryBar" style="width: 0%;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="memoryDetails" style="margin-top: 10px; text-align: center; font-size: 0.9em; color: #666;">
+                    总内存: <span id="totalMemory">--</span> | 已用: <span id="usedMemory">--</span> | 可用: <span id="availableMemory">--</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="panel">
+            <h2>🖼️ SVG角色生成</h2>
+
+            <div class="form-group">
+                <label for="inputImage">上传人脸图片:</label>
+                <input type="file" id="inputImage" accept=".jpg,.jpeg,.png">
+            </div>
+
+            <div class="form-group">
+                <label for="modelPath">模型文件路径:</label>
+                <input type="text" id="modelPath" value="./models/face2svg_final_model.pth">
+            </div>
+
+            <div class="form-group">
+                <label for="outputPath">输出SVG路径:</label>
+                <input type="text" id="outputPath" value="./output.svg">
+            </div>
+
+            <div class="form-group">
+                <label for="mouthType">嘴型控制:</label>
+                <select id="mouthType">
+                    <option value="">自动检测</option>
+                    <option value="A">😊 A型 (张嘴)</option>
+                    <option value="O">😮 O型 (圆嘴)</option>
+                    <option value="E">😑 E型 (平嘴)</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="blinkControl"> 启用眨眼效果
+                </label>
+            </div>
+
+            <div class="action-buttons">
+                <button id="generateSVG" class="btn-full">✨ 生成SVG</button>
+            </div>
+
+            <div id="generationStatus" class="status"></div>
+
+            <div class="svg-container">
+                <svg id="svgPreview" width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
+                    <!-- 默认SVG角色 -->
+                    <ellipse id="face" cx="128" cy="128" rx="80" ry="90" fill="#f8d9e9" stroke="#d9a8c8" stroke-width="2"/>
+                    <g id="eye-left">
+                        <ellipse cx="90" cy="100" rx="12" ry="15" fill="white" stroke="#333" stroke-width="1"/>
+                        <ellipse cx="90" cy="100" rx="6" ry="8" fill="#333"/>
+                        <ellipse cx="92" cy="98" rx="2" ry="2" fill="white"/>
+                    </g>
+                    <g id="eye-right">
+                        <ellipse cx="166" cy="100" rx="12" ry="15" fill="white" stroke="#333" stroke-width="1"/>
+                        <ellipse cx="166" cy="100" rx="6" ry="8" fill="#333"/>
+                        <ellipse cx="168" cy="98" rx="2" ry="2" fill="white"/>
+                    </g>
+                    <path id="mouth-A" d="M110,160 Q128,180 146,160" stroke="#e75480" stroke-width="3" fill="none"/>
+                    <circle id="mouth-O" cx="128" cy="165" r="8" stroke="#e75480" stroke-width="3" fill="none" display="none"/>
+                    <path id="mouth-E" d="M110,165 L146,165" stroke="#e75480" stroke-width="3" fill="none" display="none"/>
+                </svg>
+            </div>
+
+            <div class="controls">
+                <button onclick="setMouth('A')">😊 A型</button>
+                <button onclick="setMouth('O')">😮 O型</button>
+                <button onclick="setMouth('E')">😑 E型</button>
+                <button onclick="blink()">👁️ 眨眼</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // SVG控制函数
+        function setMouth(type) {
+            const mouthA = document.getElementById('mouth-A');
+            const mouthO = document.getElementById('mouth-O');
+            const mouthE = document.getElementById('mouth-E');
+
+            if (mouthA) mouthA.setAttribute('display', 'none');
+            if (mouthO) mouthO.setAttribute('display', 'none');
+            if (mouthE) mouthE.setAttribute('display', 'none');
+
+            if (type === 'A' && mouthA) {
+                mouthA.setAttribute('display', 'block');
+            } else if (type === 'O' && mouthO) {
+                mouthO.setAttribute('display', 'block');
+            } else if (type === 'E' && mouthE) {
+                mouthE.setAttribute('display', 'block');
+            }
+        }
+
+        function blink() {
+            const eyeLeft = document.getElementById('eye-left');
+            const eyeRight = document.getElementById('eye-right');
+
+            if (!eyeLeft || !eyeRight) return;
+
+            const leftInnerHTML = eyeLeft.innerHTML;
+            const rightInnerHTML = eyeRight.innerHTML;
+
+            eyeLeft.innerHTML = '<line x1="84" y1="95" x2="96" y2="95" stroke="#333" stroke-width="2"/>';
+            eyeRight.innerHTML = '<line x1="160" y1="95" x2="172" y2="95" stroke="#333" stroke-width="2"/>';
+
+            setTimeout(() => {
+                eyeLeft.innerHTML = leftInnerHTML;
+                eyeRight.innerHTML = rightInnerHTML;
+            }, 300);
+        }
+
+        // 训练控制
+        document.getElementById('startTraining').addEventListener('click', function() {
+            const progress = document.getElementById('trainingProgress');
+            const progressText = document.getElementById('progressText');
+            const startBtn = document.getElementById('startTraining');
+            const stopBtn = document.getElementById('stopTraining');
+
+            const dataDir = document.getElementById('dataDir').value;
+            const epochs = document.getElementById('epochs').value;
+            const batchSize = document.getElementById('batchSize').value;
+            const learningRate = document.getElementById('learningRate').value;
+
+            // 使用现有的按钮状态信息区域
+            const taskDetailsSpan = document.getElementById('taskDetails');
+            if (taskDetailsSpan) {
+                taskDetailsSpan.textContent = '正在启动训练...';
+                taskDetailsSpan.style.color = '#0c5460';
+                taskDetailsSpan.style.backgroundColor = '#d1ecf1';
+                taskDetailsSpan.style.padding = '8px';
+                taskDetailsSpan.style.borderRadius = '4px';
+            }
+
+            startBtn.disabled = true;
+            stopBtn.disabled = false;
+
+            fetch('/train', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    data_dir: dataDir,
+                    epochs: parseInt(epochs),
+                    batch_size: parseInt(batchSize),
+                    learning_rate: parseFloat(learningRate)
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    if (taskDetailsSpan) {
+                        taskDetailsSpan.textContent = data.error;
+                        taskDetailsSpan.style.color = '#721c24';
+                        taskDetailsSpan.style.backgroundColor = '#f8d7da';
+                    }
+                    startBtn.disabled = false;
+                    stopBtn.disabled = true;
+                } else {
+                    if (taskDetailsSpan) {
+                        taskDetailsSpan.textContent = data.message;
+                        taskDetailsSpan.style.color = '#155724';
+                        taskDetailsSpan.style.backgroundColor = '#d4edda';
+                    }
+                    monitorTrainingStatus();
+                }
+            })
+            .catch(error => {
+                console.error('错误:', error);
+                if (taskDetailsSpan) {
+                    taskDetailsSpan.textContent = '启动训练时出现错误: ' + error.message;
+                    taskDetailsSpan.style.color = '#721c24';
+                    taskDetailsSpan.style.backgroundColor = '#f8d7da';
+                }
+                startBtn.disabled = false;
+                stopBtn.disabled = true;
+            });
+        });
+
+        document.getElementById('stopTraining').addEventListener('click', function() {
+            const startBtn = document.getElementById('startTraining');
+            const stopBtn = document.getElementById('stopTraining');
+            const taskDetailsSpan = document.getElementById('taskDetails');
+
+            fetch('/train/stop', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (taskDetailsSpan) {
+                    taskDetailsSpan.textContent = data.message;
+                    taskDetailsSpan.style.color = '#155724';
+                    taskDetailsSpan.style.backgroundColor = '#d4edda';
+                }
+                startBtn.disabled = false;
+                stopBtn.disabled = true;
+            })
+            .catch(error => {
+                console.error('错误:', error);
+                if (taskDetailsSpan) {
+                    taskDetailsSpan.textContent = '停止训练时出现错误: ' + error.message;
+                    taskDetailsSpan.style.color = '#721c24';
+                    taskDetailsSpan.style.backgroundColor = '#f8d7da';
+                }
+            });
+        });
+
+        document.getElementById('killAllTraining').addEventListener('click', function() {
+            const confirmed = confirm('确定要终止所有训练任务吗？此操作不可逆！');
+            if (confirmed) {
+                fetch('/train/kill_all', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.message) {
+                        alert(data.message);
+                        document.getElementById('startTraining').disabled = false;
+                        document.getElementById('stopTraining').disabled = true;
+                    } else if (data.error) {
+                        alert('终止训练任务时出现错误: ' + data.error);
+                    }
+                })
+                .catch(error => {
+                    console.error('错误:', error);
+                    alert('终止训练任务时出现错误: ' + error.message);
+                });
+            }
+        });
+
+        function monitorTrainingStatus() {
+            const statusInterval = setInterval(() => {
+                fetch('/train/status')
+                    .then(response => response.json())
+                    .then(data => {
+                        const progress = document.getElementById('trainingProgress');
+                        const progressText = document.getElementById('progressText');
+                        const elapsedTimeSpan = document.getElementById('elapsedTime');
+                        const totalTimeSpan = document.getElementById('totalTime');
+                        const taskDetailsSpan = document.getElementById('taskDetails');
+
+                        progress.value = data.progress;
+                        progressText.textContent = `进度: ${data.progress}% - ${data.message}`;
+
+                        if (data.elapsed_time_str) {
+                            elapsedTimeSpan.textContent = data.elapsed_time_str;
+                        }
+                        if (data.total_training_time_str) {
+                            totalTimeSpan.textContent = data.total_training_time_str;
+                        }
+
+                        let taskDetail = data.message;
+                        if (data.message.includes('Epoch') && data.message.includes('Batch')) {
+                            const epochMatch = data.message.match(/Epoch (\d+)\/(\d+)/);
+                            const batchMatch = data.message.match(/Batch (\d+)\/(\d+)/);
+                            if (epochMatch && batchMatch) {
+                                const currentEpoch = epochMatch[1];
+                                const totalEpochs = epochMatch[2];
+                                const currentBatch = batchMatch[1];
+                                const totalBatches = batchMatch[2];
+                                taskDetail = `第 ${currentEpoch}/${totalEpochs} 轮，第 ${currentBatch}/${totalBatches} 批`;
+                            }
+                        }
+                        taskDetailsSpan.textContent = taskDetail;
+
+                        if (!data.running) {
+                            clearInterval(statusInterval);
+                            document.getElementById('startTraining').disabled = false;
+                            document.getElementById('stopTraining').disabled = true;
+                        }
+                    })
+                    .catch(error => {
+                        console.error('获取状态时出现错误:', error);
+                        clearInterval(statusInterval);
+                        document.getElementById('startTraining').disabled = false;
+                        document.getElementById('stopTraining').disabled = true;
+                    });
+            }, 2000);
+        }
+
+        // SVG生成
+        document.getElementById('generateSVG').addEventListener('click', function() {
+            const inputImageFile = document.getElementById('inputImage').files[0];
+            const modelPath = document.getElementById('modelPath').value;
+            const outputPath = document.getElementById('outputPath').value;
+            const mouthType = document.getElementById('mouthType').value;
+            const blinkControl = document.getElementById('blinkControl').checked;
+            const statusDiv = document.getElementById('generationStatus');
+
+            if (!inputImageFile) {
+                statusDiv.className = 'status error';
+                statusDiv.textContent = '请先选择一张图片';
+                return;
+            }
+
+            statusDiv.className = 'status info';
+            statusDiv.textContent = `正在生成SVG...`;
+
+            const formData = new FormData();
+            formData.append('file', inputImageFile);
+            formData.append('model_path', modelPath);
+            formData.append('output_path', outputPath);
+            if (mouthType) {
+                formData.append('mouth_type', mouthType);
+            }
+            formData.append('blink', blinkControl);
+
+            fetch('/generate', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    statusDiv.className = 'status error';
+                    statusDiv.textContent = data.error;
+                } else {
+                    statusDiv.className = 'status success';
+                    statusDiv.textContent = data.message;
+                    if (data.svg_content) {
+                        const svgPreview = document.getElementById('svgPreview');
+                        const tempDiv = document.createElement('div');
+                        tempDiv.innerHTML = data.svg_content;
+                        const newSvgContent = tempDiv.querySelector('svg');
+                        
+                        if (newSvgContent) {
+                            const newWidth = newSvgContent.getAttribute('width') || '256';
+                            const newHeight = newSvgContent.getAttribute('height') || '256';
+                            const newViewBox = newSvgContent.getAttribute('viewBox') || `0 0 ${newWidth} ${newHeight}`;
+                            
+                            svgPreview.innerHTML = '';
+                            svgPreview.setAttribute('width', newWidth);
+                            svgPreview.setAttribute('height', newHeight);
+                            svgPreview.setAttribute('viewBox', newViewBox);
+                            svgPreview.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+                            
+                            const children = Array.from(newSvgContent.children);
+                            children.forEach(child => {
+                                svgPreview.appendChild(child.cloneNode(true));
+                            });
+                        }
+                    }
+                }
+            })
+            .catch(error => {
+                console.error('错误:', error);
+                statusDiv.className = 'status error';
+                statusDiv.textContent = '生成SVG时出现错误: ' + error.message;
+            });
+        });
+
+        // 系统资源监控
+        function updateSystemStats() {
+            fetch('/system_stats')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) return;
+                    
+                    document.getElementById('cpuUsage').textContent = data.cpu_percent + '%';
+                    document.getElementById('cpuBar').style.width = data.cpu_percent + '%';
+
+                    document.getElementById('memoryUsage').textContent = data.memory_percent + '%';
+                    document.getElementById('memoryBar').style.width = data.memory_percent + '%';
+
+                    const totalGB = (data.memory_total / (1024**3)).toFixed(2);
+                    const usedGB = (data.memory_used / (1024**3)).toFixed(2);
+                    const availableGB = (data.memory_available / (1024**3)).toFixed(2);
+
+                    document.getElementById('totalMemory').textContent = totalGB + ' GB';
+                    document.getElementById('usedMemory').textContent = usedGB + ' GB';
+                    document.getElementById('availableMemory').textContent = availableGB + ' GB';
+                })
+                .catch(error => {
+                    console.error('获取系统资源时出现错误:', error);
+                });
+        }
+
+        // 更新训练日志
+        function updateTrainingLog() {
+            fetch('/train/log')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.log) {
+                        const logDiv = document.getElementById('trainingLog');
+                        logDiv.textContent = data.log.join('\n');
+                        logDiv.scrollTop = logDiv.scrollHeight;
+                    }
+                })
+                .catch(error => {
+                    console.error('获取训练日志时出现错误:', error);
+                });
+        }
+
+        // 更新数据状态
+        function updateDataStatus() {
+            fetch('/data/status')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        document.getElementById('imageCount').textContent = '--';
+                        document.getElementById('labelCount').textContent = '--';
+                    } else {
+                        document.getElementById('imageCount').textContent = data.image_count || 0;
+                        document.getElementById('labelCount').textContent = data.label_count || 0;
+                    }
+                })
+                .catch(error => {
+                    console.error('获取数据状态时出现错误:', error);
+                    document.getElementById('imageCount').textContent = '--';
+                    document.getElementById('labelCount').textContent = '--';
+                });
+
+            // 获取模型数量
+            fetch('/model/count')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.count !== undefined) {
+                        document.getElementById('modelCount').textContent = data.count;
+                    }
+                })
+                .catch(error => {
+                    console.error('获取模型数量时出现错误:', error);
+                    document.getElementById('modelCount').textContent = '--';
+                });
+        }
+
+        // 检查当前训练状态
+        function checkTrainingStatus() {
+            fetch('/train/status')
+                .then(response => response.json())
+                .then(data => {
+                    const startBtn = document.getElementById('startTraining');
+                    const stopBtn = document.getElementById('stopTraining');
+                    const progress = document.getElementById('trainingProgress');
+                    const progressText = document.getElementById('progressText');
+                    const elapsedTimeSpan = document.getElementById('elapsedTime');
+                    const totalTimeSpan = document.getElementById('totalTime');
+                    const taskDetailsSpan = document.getElementById('taskDetails');
+
+                    if (data.running) {
+                        // 训练正在进行中，更新UI状态
+                        startBtn.disabled = true;
+                        stopBtn.disabled = false;
+
+                        if (progress) {
+                            progress.value = data.progress;
+                        }
+
+                        if (progressText) {
+                            progressText.textContent = `进度: ${data.progress}% - ${data.message}`;
+                        }
+
+                        if (elapsedTimeSpan && data.elapsed_time_str) {
+                            elapsedTimeSpan.textContent = data.elapsed_time_str;
+                        }
+
+                        if (totalTimeSpan && data.total_training_time_str) {
+                            totalTimeSpan.textContent = data.total_training_time_str;
+                        }
+
+                        if (taskDetailsSpan) {
+                            let taskDetail = data.message;
+                            if (data.message.includes('Epoch') && data.message.includes('Batch')) {
+                                const epochMatch = data.message.match(/Epoch (\d+)\/(\d+)/);
+                                const batchMatch = data.message.match(/Batch (\d+)\/(\d+)/);
+                                if (epochMatch && batchMatch) {
+                                    const currentEpoch = epochMatch[1];
+                                    const totalEpochs = epochMatch[2];
+                                    const currentBatch = batchMatch[1];
+                                    const totalBatches = batchMatch[2];
+                                    taskDetail = `第 ${currentEpoch}/${totalEpochs} 轮，第 ${currentBatch}/${totalBatches} 批`;
+                                }
+                            }
+                            taskDetailsSpan.textContent = taskDetail;
+                        }
+
+                        // 开始监听训练状态
+                        if (typeof monitorTrainingStatus === 'function' && !window.isMonitoring) {
+                            window.isMonitoring = true;
+                            monitorTrainingStatus();
+                        }
+                    } else {
+                        // 训练未在进行中
+                        startBtn.disabled = false;
+                        stopBtn.disabled = true;
+
+                        if (progressText) {
+                            progressText.textContent = '等待开始...';
+                        }
+
+                        if (taskDetailsSpan) {
+                            taskDetailsSpan.textContent = '准备开始训练';
+                        }
+                    }
+                })
+                .catch(error => {
+                    console.error('获取训练状态时出现错误:', error);
+                });
+        }
+
+        // 页面加载完成后初始化
+        window.onload = function() {
+            updateSystemStats();
+            updateTrainingLog();
+            updateDataStatus();
+            checkTrainingStatus(); // 添加检查当前训练状态
+
+            setInterval(updateSystemStats, 3000);
+            setInterval(updateTrainingLog, 2000);
+            setInterval(updateDataStatus, 10000);
+            setInterval(checkTrainingStatus, 5000); // 定期检查训练状态
+        };
+
+        // 从CelebA生成数据功能
+        document.getElementById('generateFromCelebA').addEventListener('click', function() {
+            const statusDiv = document.getElementById('celebaStatus');
+            const inputDir = document.getElementById('celebaInputDir').value;
+            const outputDir = document.getElementById('celebaOutputDir').value;
+            const maxCount = parseInt(document.getElementById('celebaMaxCount').value);
+
+            statusDiv.className = 'status info';
+            statusDiv.textContent = '正在启动数据生成...';
+
+            fetch('/generate_from_celeba', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    input_dir: inputDir,
+                    output_dir: outputDir,
+                    max_count: maxCount
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    statusDiv.className = 'status error';
+                    statusDiv.textContent = data.error;
+                } else {
+                    statusDiv.className = 'status success';
+                    statusDiv.textContent = data.message;
+                    // 更新数据统计
+                    updateDataStatus();
+                }
+            })
+            .catch(error => {
+                console.error('错误:', error);
+                statusDiv.className = 'status error';
+                statusDiv.textContent = '数据生成时出现错误: ' + error.message;
+            });
+        });
+    </script>
+</body>
+</html>

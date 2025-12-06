@@ -1,0 +1,31 @@
+# Virtual Environment
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+.venv/
+env.bak/
+venv.bak/
+
+# Data directories (exclude all data files)
+data/
+celeba_data/
+task_data/
+
+# Model directories (exclude model files)
+models/
+
+# Output files
+*.svg
+output.svg
+inference_output.svg
+*.log
+web/output.svg
+web/total_training_time.txt
+
+# System files
+.DS_Store
+Thumbs.db
